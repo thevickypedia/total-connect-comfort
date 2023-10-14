@@ -6,17 +6,19 @@ import main.tcc.api.exceptions.LoginUnexpectedError;
 import main.tcc.api.exceptions.RedirectError;
 import main.tcc.api.exceptions.TooManyAttemptsError;
 import main.tcc.settings;
+import org.apache.http.HttpResponse;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.entity.StringEntity;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
+import org.apache.http.util.EntityUtils;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.io.OutputStream;
 import java.net.ConnectException;
 import java.net.HttpURLConnection;
-import java.net.MalformedURLException;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.ConsoleHandler;
 import java.util.logging.Logger;
@@ -43,18 +45,14 @@ public class TCCWebAPI {
         return stringify.toString();
     }
 
-    public static boolean _validate_auth_response(HttpURLConnection connection)
+    public static boolean validate_auth_response(HttpResponse response, String response_url)
             throws AuthenticationError, TooManyAttemptsError, RedirectError, LoginUnexpectedError {
-        String response_url = connection.getURL().toString();
         logger.info(response_url);
         try {
-            String response = getResponse(connection);
-            logger.info(response);
-            if (response.contains("The email or password provided is incorrect") |
-                    response.contains("The email address is not in the correct format")) {
-                throw new AuthenticationError(
-                        String.format("Email (%s) and/or password not accepted", settings.username)
-                );
+            String responseBody = EntityUtils.toString(response.getEntity());
+            logger.info(responseBody);
+            if (responseBody.contains("The email or password provided is incorrect") | responseBody.contains("The email address is not in the correct format")) {
+                throw new AuthenticationError(String.format("Email (%s) and/or password not accepted", settings.username));
             }
             if (response_url.contains("TooManyAttempts")) {
                 throw new TooManyAttemptsError("Too many attempts");
@@ -80,11 +78,9 @@ public class TCCWebAPI {
         }
         for (String key : data.keySet()) {
             if (newline) {
-                jsonInputStringBuilder.append("  \"").append(key)
-                        .append("\": \"").append(data.get(key)).append("\",\n");
+                jsonInputStringBuilder.append("  \"").append(key).append("\": \"").append(data.get(key)).append("\",\n");
             } else {
-                jsonInputStringBuilder.append("\"").append(key)
-                        .append("\": \"").append(data.get(key)).append("\", ");
+                jsonInputStringBuilder.append("\"").append(key).append("\": \"").append(data.get(key)).append("\", ");
             }
         }
         String jsonInputString = jsonInputStringBuilder.toString();
@@ -97,51 +93,59 @@ public class TCCWebAPI {
         return jsonInputString;
     }
 
-    public static boolean _do_authenticate(URL url)
-            throws TooManyAttemptsError, RedirectError, AuthenticationError, LoginUnexpectedError {
+    public static boolean do_authenticate() throws AuthenticationError, TooManyAttemptsError, RedirectError, LoginUnexpectedError {
+        // Create an HTTP client
+        CloseableHttpClient httpClient = HttpClients.createDefault();
+
+        // Create an HTTP POST request
+        HttpPost httpPost = new HttpPost(settings.base_url);
+
         try {
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-            connection.setRequestMethod("POST");
-            connection.setDoOutput(true);
+            // Set the request parameters
+            String jsonRequest = "{\"UserName\":\"" + settings.username + "\",\"Password\":\"" + settings.password + "\"}";
+            StringEntity requestEntity = new StringEntity(jsonRequest);
+            requestEntity.setContentType("application/json");
+            httpPost.setEntity(requestEntity);
 
-            JSONObject data = new JSONObject();
-            data.put("UserName", settings.username);
-            data.put("Password", settings.password);
-            String jsonInputString = stringifyJSON(data, true);
+            // Execute the POST request
+            HttpResponse response = httpClient.execute(httpPost);
 
-            /*  Alternative approach
-            String jsonInputString = String.format(
-                    "{\n  \"UserName\": \"%s\",\n  \"Password\": \"%s\"\n}",
-                    settings.username, settings.password
-            );
-            */
+            // Get the response content
+            String responseBody = EntityUtils.toString(response.getEntity());
 
-            try (OutputStream stream = connection.getOutputStream()) {
-                byte[] input = jsonInputString.getBytes(StandardCharsets.UTF_8);
-                stream.write(input);
-            }
+            System.out.println("Response Status Code: " + response.getStatusLine().getStatusCode());
+            System.out.println("Response Body: " + responseBody);
 
-            int responseCode = connection.getResponseCode();
-            if (responseCode == 200) {
-                return _validate_auth_response(connection);
+            int responseCode = response.getStatusLine().getStatusCode();
+            if (responseCode <= 400) {
+                boolean validated = validate_auth_response(response, httpPost.getURI().toString());
+                try {
+                    httpClient.close();
+                } catch (Exception error) {
+                    logger.warning(error.toString());
+                }
+                return validated;
             } else {
-                throw new ConnectException(String.format("%d - %s", responseCode, connection.getResponseMessage()));
+                throw new ConnectException(String.format("%d - %s", responseCode, responseBody));
             }
         } catch (IOException error) {
             logger.warning(error.toString());
-            return true;
         }
+        return true;
     }
 
     public static void authenticate() throws InterruptedException {
         for (int i = 1; i < 31; i++) {
             logger.info("Starting authentication attempt " + i);
             try {
-                URL url = new URL(settings.base_url);
-                if (_do_authenticate(url)) {
+                if (do_authenticate()) {
                     return;
+                } else {
+                    // todo: check how to proceed
+                    System.out.println("Unexpected");
+                    break;
                 }
-            } catch (LoginUnexpectedError | MalformedURLException | AuthenticationError error) {
+            } catch (LoginUnexpectedError | AuthenticationError error) {
                 logger.warning(error.toString());
                 break;
             } catch (TooManyAttemptsError | RedirectError error) {
