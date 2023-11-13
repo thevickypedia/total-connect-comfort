@@ -115,10 +115,6 @@ public class requests {
                 logger.info("Page " + page + " is empty");
                 break;
             }
-            if (data.isEmpty()) {
-                logger.info("Page " + page + " is empty");
-                break;
-            }
             devices.add(data);
         }
     }
