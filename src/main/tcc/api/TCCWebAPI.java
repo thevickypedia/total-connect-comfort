@@ -18,15 +18,16 @@ import org.json.JSONObject;
 
 import java.io.IOException;
 import java.net.ConnectException;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.ConsoleHandler;
 import java.util.logging.Logger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 
 public class TCCWebAPI {
     public static Logger logger = Logger.getLogger(TCCWebAPI.class.getName());
+    public static Integer locationId;
 
     public static void setupLogger() {
         logger.setUseParentHandlers(false);
@@ -52,7 +53,13 @@ public class TCCWebAPI {
         if (response_url.contains("/Error")) {
             throw new LoginUnexpectedError("Unexpected login error received");
         }
-        System.out.println("responseBody has to be further processed..");
+        Pattern pattern = Pattern.compile("locationId=(\\d+)");
+        Matcher matcher = pattern.matcher(responseBody);
+        if (matcher.find()) {
+            TCCWebAPI.locationId = Integer.parseInt(matcher.group(1));
+        } else {
+            logger.warning("No locationId was found");
+        }
         return true;
     }
 
