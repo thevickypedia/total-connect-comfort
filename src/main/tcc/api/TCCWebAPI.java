@@ -7,22 +7,10 @@ import main.tcc.api.exceptions.RedirectError;
 import main.tcc.api.exceptions.TooManyAttemptsError;
 import main.tcc.config;
 import main.tcc.settings;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.entity.StringEntity;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClients;
-import org.apache.http.impl.client.LaxRedirectStrategy;
-import org.apache.http.util.EntityUtils;
-import org.json.JSONObject;
 
-import java.io.IOException;
-import java.net.ConnectException;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.ConsoleHandler;
 import java.util.logging.Logger;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 
 public class TCCWebAPI {
@@ -36,92 +24,11 @@ public class TCCWebAPI {
         logger.addHandler(handler);
     }
 
-    public static boolean validate_auth_response(String responseBody, String response_url)
-            throws AuthenticationError, TooManyAttemptsError, RedirectError, LoginUnexpectedError {
-        logger.info(response_url);
-        if (responseBody.contains("The email or password provided is incorrect") |
-                responseBody.contains("The email address is not in the correct format") |
-                responseBody.contains("Login was unsuccessful.")) {
-            throw new AuthenticationError(String.format("Email (%s) and/or password not accepted", settings.username));
-        }
-        if (response_url.contains("TooManyAttempts")) {
-            throw new TooManyAttemptsError("Too many attempts");
-        }
-        if (!response_url.contains("portal/") && !responseBody.contains("/portal/Device/Alerts?locationId=")) {
-            throw new RedirectError("Couldn't redirect to portal page");
-        }
-        if (response_url.contains("/Error")) {
-            throw new LoginUnexpectedError("Unexpected login error received");
-        }
-        Pattern pattern = Pattern.compile("locationId=(\\d+)");
-        Matcher matcher = pattern.matcher(responseBody);
-        if (matcher.find()) {
-            TCCWebAPI.locationId = Integer.parseInt(matcher.group(1));
-        } else {
-            logger.warning("No locationId was found");
-        }
-        return true;
-    }
-
-    public static String stringifyJSON(JSONObject data, boolean newline) {
-        // Create a formatted JSON string
-        StringBuilder jsonInputStringBuilder = new StringBuilder("{");
-        if (newline) {
-            jsonInputStringBuilder.append("\n");
-        }
-        for (String key : data.keySet()) {
-            if (newline) {
-                jsonInputStringBuilder.append("  \"").append(key).append("\": \"").append(data.get(key)).append("\",\n");
-            } else {
-                jsonInputStringBuilder.append("\"").append(key).append("\": \"").append(data.get(key)).append("\", ");
-            }
-        }
-        String jsonInputString = jsonInputStringBuilder.toString();
-        jsonInputString = jsonInputString.substring(0, jsonInputString.length() - 2); // Remove the trailing comma
-        if (newline) {
-            jsonInputString += "\n}";
-        } else {
-            jsonInputString += "}";
-        }
-        return jsonInputString;
-    }
-
-    public static boolean do_authenticate() throws AuthenticationError, TooManyAttemptsError, RedirectError, LoginUnexpectedError {
-        CloseableHttpClient httpClient = HttpClients.custom().setRedirectStrategy(new LaxRedirectStrategy()).build();
-        HttpPost httpPost = new HttpPost(settings.base_url);
-        try {
-            JSONObject data = new JSONObject();
-            data.put("UserName", settings.username);
-            data.put("Password", settings.password);
-            String jsonRequest = stringifyJSON(data, false);
-            StringEntity requestEntity = new StringEntity(jsonRequest);
-            requestEntity.setContentType("application/json");
-            httpPost.setEntity(requestEntity);
-            HttpResponse response = httpClient.execute(httpPost);
-            int responseCode = response.getStatusLine().getStatusCode();
-            String responseBody = EntityUtils.toString(response.getEntity());
-            if (responseCode <= 400) {
-                boolean validated = validate_auth_response(responseBody, httpPost.getURI().toString());
-                try {
-                    httpClient.close();
-                } catch (Exception error) {
-                    logger.warning(error.toString());
-                }
-                return validated;
-            } else {
-                throw new ConnectException(String.format("%d - %s", responseCode, responseBody));
-            }
-        } catch (IOException error) {
-            logger.warning(error.toString());
-        }
-        return true;
-    }
-
     public static void authenticate() throws InterruptedException {
         for (int i = 1; i < 31; i++) {
             logger.info("Starting authentication attempt " + i);
             try {
-                if (do_authenticate()) {
+                if (requests.do_authenticate()) {
                     return;
                 } else {
                     System.out.println("Unexpected");
@@ -139,7 +46,7 @@ public class TCCWebAPI {
         }
     }
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws exceptions.NoDevicesFoundError {
         if (!config.env_file.exists()) {
             System.out.println("'" + config.env_filename + "' doesn't exist");
             return;
@@ -151,5 +58,6 @@ public class TCCWebAPI {
         } catch (InterruptedException error) {
             logger.info(error.toString());
         }
+        requests.get_devices();
     }
 }

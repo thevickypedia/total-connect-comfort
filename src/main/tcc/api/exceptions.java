@@ -31,4 +31,9 @@ public class exceptions {
         }
     }
 
+    public static class NoDevicesFoundError extends TCCWebAPIError {
+        public NoDevicesFoundError(String message) {
+            super(message);
+        }
+    }
 }
