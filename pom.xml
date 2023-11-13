@@ -28,6 +28,10 @@
                     <groupId>log4j</groupId>
                     <artifactId>log4j</artifactId>
                 </exclusion>
+                <exclusion>
+                    <groupId>commons-codec</groupId>
+                    <artifactId>commons-codec</artifactId>
+                </exclusion>
             </exclusions>
         </dependency>
         <!-- https://mvnrepository.com/artifact/io.github.cdimascio/dotenv-java/latest -->

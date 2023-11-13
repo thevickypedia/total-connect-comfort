@@ -5,6 +5,7 @@ import main.tcc.api.exceptions.AuthenticationError;
 import main.tcc.api.exceptions.LoginUnexpectedError;
 import main.tcc.api.exceptions.RedirectError;
 import main.tcc.api.exceptions.TooManyAttemptsError;
+import main.tcc.config;
 import main.tcc.settings;
 import org.apache.http.HttpResponse;
 import org.apache.http.client.methods.HttpPost;
@@ -17,6 +18,8 @@ import org.json.JSONObject;
 
 import java.io.IOException;
 import java.net.ConnectException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.ConsoleHandler;
 import java.util.logging.Logger;
@@ -130,6 +133,11 @@ public class TCCWebAPI {
     }
 
     public static void main(String[] args) {
+        if (!config.env_file.exists()) {
+            System.out.println("'" + config.env_filename + "' doesn't exist");
+            return;
+        }
+        settings.__init__();
         setupLogger();
         try {
             authenticate();
